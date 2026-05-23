@@ -1,0 +1,2162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Othello: Multiplayer Game</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-green: #0B7C3A;
+            --light-cream: #f5f3f0;
+            --white: #ffffff;
+            --black: #1a1a1a;
+            --dark-gray: #4a4a4a;
+            --accent: #0d9550;
+            --error: #e74c3c;
+            --success: #27ae60;
+            --border-radius: 16px;
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+            background: var(--light-cream);
+            color: var(--black);
+            height: 100vh;
+            height: 100dvh;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.3s ease, color 0.3s ease;
+        }
+
+        /* Light Mode (Default) */
+        body.light-mode {
+            background: var(--light-cream);
+            color: var(--black);
+        }
+
+        /* Dark Mode */
+        body.dark-mode {
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }
+
+        /* Default to dark mode */
+        body {
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }
+
+        .app-container {
+            width: 100%;
+            height: 100%;
+            max-width: 600px;
+            display: flex;
+            flex-direction: column;
+            background: #2d2d2d;
+            transition: background 0.3s ease;
+        }
+
+        .app-container.light-mode {
+            background: var(--light-cream);
+        }
+
+        .app-container.dark-mode {
+            background: #2d2d2d;
+        }
+
+        /* === Screen Management === */
+        .screen {
+            display: none;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+        }
+
+        .screen.active {
+            display: flex;
+        }
+
+        /* === Navbar === */
+        .navbar {
+            background: var(--white);
+            border-bottom: 1px solid #e8dfd7;
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .navbar-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--black);
+            letter-spacing: 0.3px;
+        }
+
+        .navbar-toggle {
+            background: transparent;
+            border: none;
+            color: var(--primary-green);
+            width: 40px;
+            height: 40px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition);
+            padding: 0;
+            font-size: 18px;
+        }
+
+        .navbar-toggle:hover {
+            opacity: 0.7;
+        }
+
+        .navbar-toggle:active {
+            transform: scale(0.9);
+        }
+
+        .navbar.light-mode {
+            background: var(--light-cream);
+            border-bottom-color: #e8dfd7;
+        }
+
+        .navbar.light-mode .navbar-title {
+            color: var(--black);
+        }
+
+        .navbar.light-mode .navbar-toggle {
+            color: var(--primary-green);
+        }
+
+        body.dark-mode .navbar {
+            background: #383838;
+            border-bottom-color: #454545;
+        }
+
+        body.dark-mode .navbar-title {
+            color: var(--white);
+        }
+
+        body.dark-mode .navbar-toggle {
+            color: var(--white);
+        }
+
+        /* === Connection Screens === */
+        .screen-setup {
+            flex-direction: column;
+            padding: 0;
+            text-align: center;
+            overflow-y: auto;
+        }
+
+        .screen-setup-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            padding: clamp(18px, 5vw, 34px) 18px;
+        }
+
+        .setup-card-wrap {
+            width: 100%;
+            max-width: 390px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .setup-card {
+            background: var(--white);
+            border: 1px solid rgba(8, 77, 40, 0.1);
+            border-radius: 14px;
+            padding: 22px;
+            box-shadow: 0 18px 48px rgba(15, 28, 22, 0.12);
+            width: 100%;
+            max-width: 390px;
+            text-align: left;
+        }
+
+        .setup-title {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: var(--primary-green);
+            letter-spacing: 0;
+        }
+
+        .setup-description {
+            font-size: 15px;
+            color: var(--dark-gray);
+            margin-bottom: 22px;
+            line-height: 1.5;
+            font-weight: 500;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--dark-gray);
+            margin-bottom: 8px;
+            letter-spacing: 0.5px;
+        }
+
+        .input-shell {
+            position: relative;
+        }
+
+        .input-shell i {
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--primary-green);
+            font-size: 14px;
+            pointer-events: none;
+        }
+
+        .input-group input {
+            width: 100%;
+            min-height: 52px;
+            padding: 14px 16px 14px 42px;
+            font-size: 16px;
+            border: 1px solid #ded8cf;
+            border-radius: 10px;
+            background: #fafaf8;
+            color: var(--black);
+            transition: var(--transition);
+            font-family: inherit;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: var(--primary-green);
+            background: var(--white);
+            box-shadow: 0 0 0 3px rgba(11, 124, 58, 0.14);
+        }
+
+        .waiting-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 24px;
+            padding: 16px;
+            background: #f0f0ed;
+            border-radius: 12px;
+        }
+
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--primary-green);
+            border-top: 2px solid transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .waiting-text {
+            font-size: 13px;
+            color: var(--dark-gray);
+            font-weight: 500;
+        }
+
+        .link-display {
+            background: #f9f7f5;
+            padding: 16px;
+            border-radius: 10px;
+            margin-top: 18px;
+            border: 1px solid #e8dfd7;
+            word-break: break-all;
+            font-size: 12px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            color: var(--dark-gray);
+            margin-bottom: 16px;
+        }
+
+        .btn {
+            min-height: 52px;
+            padding: 14px 18px;
+            font-size: 15px;
+            font-weight: 600;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: var(--transition);
+            font-family: inherit;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn-primary {
+            background: var(--primary-green);
+            color: var(--white);
+            width: 100%;
+            margin-top: 8px;
+            position: relative;
+            box-shadow: 0 10px 24px rgba(11, 124, 58, 0.22);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #086f34;
+            transform: translateY(-1px);
+        }
+
+        .btn-primary:active:not(:disabled) {
+            transform: scale(0.98);
+            box-shadow: 0 4px 12px rgba(155, 157, 109, 0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        .btn-primary.loading {
+            color: transparent;
+        }
+
+        .btn-primary.loading::after {
+            content: '';
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            top: 50%;
+            left: 50%;
+            margin-left: -8px;
+            margin-top: -8px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        .btn-secondary {
+            background: var(--white);
+            color: var(--primary-green);
+            border: 2px solid var(--primary-green);
+            width: 100%;
+            margin-top: 12px;
+        }
+
+        .btn-secondary:active {
+            background: #fafaf8;
+            transform: scale(0.98);
+        }
+
+        /* === Game Screen === */
+        .screen-game {
+            flex-direction: column;
+            padding: 0;
+        }
+
+        .game-header {
+            background: var(--white);
+            padding: 16px 20px;
+            border-bottom: 1px solid #e8dfd7;
+            flex-shrink: 0;
+        }
+
+        .player-info-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 12px;
+            font-size: 12px;
+        }
+
+        .player-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 14px 16px;
+            background: #fafaf8;
+            border-radius: 10px;
+            transition: var(--transition);
+            border: 2px solid transparent;
+        }
+
+        .player-info.active {
+            background: var(--primary-green);
+            color: var(--white);
+            border-color: #084d28;
+        }
+
+        .player-name {
+            font-weight: 700;
+            margin-bottom: 6px;
+            font-size: 14px;
+            letter-spacing: 0.3px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .player-color-badge {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .player-color-badge.black {
+            background: #1a1a1a;
+            box-shadow: inset -2px -2px 2px rgba(0, 0, 0, 0.3), inset 1px 1px 2px rgba(255, 255, 255, 0.05);
+        }
+
+        .player-color-badge.white {
+            background: #ffffff;
+            box-shadow: inset -1px -1px 2px rgba(0, 0, 0, 0.2), inset 1px 1px 2px rgba(255, 255, 255, 0.5);
+            border: 0.5px solid #d0d0d0;
+        }
+
+        .player-score {
+            font-size: 12px;
+            opacity: 0.85;
+            font-weight: 500;
+        }
+
+        .turn-indicator {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--primary-green);
+            letter-spacing: 0.5px;
+            text-align: center;
+            padding: 8px;
+            background: #f0f0ed;
+            border-radius: 8px;
+        }
+
+        .game-board-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            overflow: hidden;
+        }
+
+        .game-board {
+            width: 100%;
+            aspect-ratio: 1;
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            gap: 0;
+            background: #084d28;
+            padding: 0;
+            border-radius: 12px;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+            overflow: hidden;
+        }
+
+        .board-cell {
+            background: #0B7C3A;
+            position: relative;
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #084d28;
+            padding: 0;
+        }
+
+        .board-cell:active {
+            transform: scale(0.95);
+        }
+
+        .board-cell.valid-move::after {
+            content: '';
+            width: 18%;
+            aspect-ratio: 1;
+            background: rgba(255, 255, 255, 0.4);
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.4; }
+            50% { transform: scale(1.2); opacity: 0.8; }
+        }
+
+        .disc {
+            width: 85%;
+            height: 85%;
+            border-radius: 50%;
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: inset -2px -2px 4px rgba(0, 0, 0, 0.2), inset 2px 2px 4px rgba(255, 255, 255, 0.1);
+            font-weight: 700;
+            color: white;
+            font-size: 10px;
+            transform: translateZ(0);
+            transform-style: preserve-3d;
+            will-change: transform, opacity;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .disc.black {
+            background: #1a1a1a;
+            box-shadow: inset -3px -3px 6px rgba(0, 0, 0, 0.4), inset 2px 2px 4px rgba(255, 255, 255, 0.05), 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .disc.white {
+            background: #ffffff;
+            color: var(--black);
+            box-shadow: inset -2px -2px 4px rgba(0, 0, 0, 0.1), inset 2px 2px 4px rgba(255, 255, 255, 0.5), 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .disc.placed {
+            animation: discPlace 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes discPlace {
+            0% { transform: translateZ(0) scale(0.35); opacity: 0; }
+            70% { transform: translateZ(0) scale(1.08); opacity: 1; }
+            100% { transform: translateZ(0) scale(1); opacity: 1; }
+        }
+
+        .disc.flipped {
+            animation: discFlip 0.72s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        @keyframes discFlip {
+            0% { transform: translateZ(0) rotateY(0deg) scale(1); }
+            45% { transform: translateZ(0) rotateY(90deg) scale(1.08); }
+            100% { transform: translateZ(0) rotateY(180deg) scale(1); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .board-cell,
+            .disc,
+            .disc.placed,
+            .disc.flipped,
+            .board-cell.valid-move::after,
+            .game-over-content,
+            .game-over-overlay {
+                animation: none;
+                transition: none;
+            }
+        }
+
+        /* === Game Over Overlay === */
+        .game-over-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .game-over-overlay.active {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .game-over-content {
+            background: var(--white);
+            border-radius: var(--border-radius);
+            padding: 40px 28px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+            animation: slideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            max-width: 360px;
+            width: 100%;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(40px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .game-over-title {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: var(--primary-green);
+        }
+
+        .game-over-winner {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 24px;
+            color: var(--black);
+        }
+
+        .final-scores {
+            display: flex;
+            justify-content: space-around;
+            gap: 12px;
+            margin-bottom: 28px;
+            padding: 16px;
+            background: #f9f7f5;
+            border-radius: 12px;
+        }
+
+        .score-card {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .score-label {
+            font-size: 12px;
+            color: var(--dark-gray);
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+
+        .score-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--primary-green);
+        }
+
+        body.dark-mode .setup-card,
+        body.dark-mode .game-over-content {
+            background: #383838;
+            color: #f2f2f2;
+            border-color: #4f4f4f;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        }
+
+        body.dark-mode .setup-description,
+        body.dark-mode .setup-kicker,
+        body.dark-mode .input-group label,
+        body.dark-mode .waiting-text,
+        body.dark-mode .score-label {
+            color: #d0d0d0;
+        }
+
+        body.dark-mode .screen-setup {
+            background: #1a1a1a;
+        }
+
+        body.dark-mode .input-group input {
+            background: #454545;
+            border-color: #666666;
+            color: #f2f2f2;
+        }
+
+        body.dark-mode .input-group input::placeholder {
+            color: #a9a9a9;
+        }
+
+        body.dark-mode .input-group input:focus {
+            background: #505050;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(13, 149, 80, 0.2);
+        }
+
+        body.dark-mode .game-header {
+            background: #383838;
+            border-bottom-color: #555555;
+        }
+
+        body.dark-mode .player-info {
+            background: #454545;
+            color: #e6e6e6;
+            border-color: #5f5f5f;
+        }
+
+        body.dark-mode .player-info.active {
+            background: var(--primary-green);
+            color: var(--white);
+            border-color: #12b35f;
+        }
+
+        body.dark-mode .turn-indicator,
+        body.dark-mode .waiting-indicator,
+        body.dark-mode .final-scores {
+            background: #454545;
+            color: #f2f2f2;
+        }
+
+        body.dark-mode .link-display {
+            background: #454545;
+            border-color: #666666;
+            color: #f2f2f2;
+        }
+
+        body.dark-mode .game-over-winner {
+            color: #f2f2f2;
+        }
+
+        body.dark-mode .connection-error {
+            background: #5c2a2a;
+            color: #ffb3b3;
+        }
+
+        body.dark-mode .waiting-indicator {
+            background: #454545;
+        }
+
+        /* === Toast Notification === */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--primary-green);
+            color: var(--white);
+            padding: 12px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+            z-index: 2000;
+            animation: toastIn 0.3s ease-out;
+            display: none;
+        }
+
+        .toast.show {
+            display: block;
+        }
+
+        @keyframes toastIn {
+            from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+        }
+
+        /* === Responsive === */
+        @media (max-width: 480px) {
+            .screen-setup {
+                justify-content: flex-start;
+                gap: 14px;
+                padding: 14px 14px 0;
+            }
+
+            .setup-card-wrap {
+                margin-top: auto;
+            }
+
+            .setup-card {
+                max-width: 100%;
+                padding: 18px;
+                border-radius: 12px;
+            }
+
+            .setup-topbar {
+                margin-bottom: 18px;
+            }
+
+            .setup-mark {
+                width: 40px;
+                height: 40px;
+                border-radius: 10px;
+            }
+
+            .setup-title {
+                font-size: 25px;
+            }
+
+            .setup-description {
+                margin-bottom: 20px;
+                font-size: 13px;
+            }
+
+            .btn,
+            .input-group input {
+                min-height: 50px;
+            }
+
+            .game-board-container {
+                padding: 16px;
+            }
+
+            .game-header {
+                padding: 12px 16px;
+            }
+        }
+
+        /* === Dark Mode Styles === */
+        .setup-card.dark-mode {
+            background: #383838;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        }
+
+        .input-group label.dark-mode {
+            color: #d0d0d0;
+        }
+
+        .input-group input.dark-mode {
+            background: #454545;
+            border-color: #666666;
+            color: #f2f2f2;
+        }
+
+        .input-group input.dark-mode:focus {
+            background: #505050;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(13, 149, 80, 0.2);
+        }
+
+        .game-header.dark-mode {
+            background: #383838;
+            border-bottom: 1px solid #454545;
+        }
+
+        .player-info.dark-mode {
+            background: #454545;
+            color: #e6e6e6;
+            border-color: #5f5f5f;
+        }
+
+        .player-info.dark-mode.active {
+            background: var(--primary-green);
+            color: var(--white);
+            border-color: #12b35f;
+        }
+
+        .turn-indicator.dark-mode {
+            background: #454545;
+            color: #f2f2f2;
+        }
+
+        .link-display.dark-mode {
+            background: #454545;
+            border-color: #666666;
+            color: #f2f2f2;
+        }
+
+        .waiting-indicator.dark-mode {
+            background: #454545;
+        }
+
+        .connection-error.dark-mode {
+            background: #5c2a2a;
+            color: #ff6b6b;
+        }
+
+        .theme-toggle {
+            background: transparent;
+            border: none;
+            color: var(--primary-green);
+            width: 32px;
+            height: 32px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition);
+            z-index: 100;
+            padding: 0;
+        }
+
+        .setup-card .theme-toggle {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: #f2f7f4;
+            border: 1px solid rgba(11, 124, 58, 0.16);
+            flex: 0 0 auto;
+        }
+
+        .theme-toggle:hover {
+            opacity: 0.7;
+        }
+
+        .theme-toggle:active {
+            transform: scale(0.9);
+        }
+
+        body.dark-mode .theme-toggle {
+            color: var(--accent);
+        }
+
+        body.dark-mode .setup-card .theme-toggle {
+            display: none;
+        }
+
+        .game-header .theme-toggle {
+            position: relative;
+            top: auto;
+            right: auto;
+            transform: none;
+        }
+
+        /* === Footer === */
+        .footer {
+            background: var(--white);
+            border-top: 1px solid #e8dfd7;
+            padding: 18px 20px 14px 20px;
+            text-align: center;
+            flex-shrink: 0;
+            display: none;
+            margin-top: auto;
+            width: 100%;
+        }
+
+        .screen-setup .footer {
+            width: 100%;
+            background: var(--white);
+            border-top: 1px solid #e8dfd7;
+            padding: 18px 20px 14px 20px;
+            margin-top: auto;
+            flex-shrink: 0;
+        }
+
+        body.dark-mode .screen-setup .footer {
+            background: #383838;
+            border-top-color: #454545;
+        }
+
+        .footer.show {
+            display: block;
+        }
+
+        .footer-text {
+            font-size: 11px;
+            color: var(--dark-gray);
+            margin-bottom: 10px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            opacity: 0.8;
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .footer-link {
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            background: #f5f3f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--primary-green);
+            text-decoration: none;
+            transition: var(--transition);
+            font-size: 16px;
+        }
+
+        .footer-link:hover {
+            background: var(--primary-green);
+            color: var(--white);
+            transform: translateY(-2px);
+        }
+
+        body.dark-mode .footer {
+            background: #383838;
+            border-top: 1px solid #454545;
+        }
+
+        body.dark-mode .screen-setup .footer {
+            background: transparent;
+            border-top: 0;
+        }
+
+        body.dark-mode .footer-text {
+            color: #a8a8a8;
+        }
+
+        body.dark-mode .footer-link {
+            background: #454545;
+            color: var(--accent);
+        }
+
+        body.dark-mode .footer-link:hover {
+            background: var(--accent);
+            color: var(--white);
+        }
+
+        /* === Error States === */
+        .error-message {
+            color: var(--error);
+            font-size: 12px;
+            margin-top: 8px;
+            text-align: center;
+        }
+
+        .connection-error {
+            background: #ffe6e6;
+            color: var(--error);
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-top: 16px;
+            text-align: center;
+        }
+
+        /* === Desktop Layout === */
+        @media (min-width: 900px) {
+            body {
+                padding: 24px;
+                background:
+                    radial-gradient(circle at 18% 12%, rgba(13, 149, 80, 0.16), transparent 30%),
+                    radial-gradient(circle at 82% 82%, rgba(11, 124, 58, 0.12), transparent 28%),
+                    #1a1a1a;
+            }
+
+            body.light-mode {
+                background:
+                    radial-gradient(circle at 18% 12%, rgba(11, 124, 58, 0.12), transparent 30%),
+                    radial-gradient(circle at 82% 82%, rgba(8, 77, 40, 0.08), transparent 28%),
+                    var(--light-cream);
+            }
+
+            .app-container {
+                width: min(1180px, calc(100vw - 48px));
+                height: min(860px, calc(100dvh - 48px));
+                max-width: none;
+                border-radius: 18px;
+                overflow: hidden;
+                box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+            }
+
+            .navbar {
+                padding: 18px 28px;
+            }
+
+            .navbar-title {
+                font-size: 24px;
+            }
+
+            .screen-setup-content {
+                padding: 56px 32px;
+            }
+
+            .setup-card-wrap,
+            .setup-card {
+                max-width: 440px;
+            }
+
+            .setup-card {
+                padding: 30px;
+                border-radius: 16px;
+            }
+
+            .setup-title {
+                font-size: 30px;
+                margin-bottom: 14px;
+            }
+
+            .setup-description {
+                font-size: 16px;
+                margin-bottom: 26px;
+            }
+
+            .screen-setup .footer {
+                max-width: none;
+                padding-bottom: 20px;
+            }
+
+            .screen-game.active {
+                display: grid;
+                grid-template-columns: minmax(300px, 350px) minmax(0, 1fr);
+                grid-template-rows: 1fr auto;
+                grid-template-areas:
+                    "header board"
+                    "footer board";
+            }
+
+            .game-header {
+                grid-area: header;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                gap: 20px;
+                padding: 30px;
+                border-bottom: 0;
+                border-right: 1px solid #e8dfd7;
+            }
+
+            body.dark-mode .game-header {
+                border-right-color: #454545;
+            }
+
+            .player-info-row {
+                flex-direction: column;
+                gap: 14px;
+                margin-bottom: 0;
+            }
+
+            .player-info {
+                padding: 18px;
+                border-radius: 12px;
+            }
+
+            .player-name {
+                font-size: 16px;
+            }
+
+            .player-score {
+                font-size: 14px;
+            }
+
+            .turn-indicator {
+                min-height: 46px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 12px;
+            }
+
+            .game-board-container {
+                grid-area: board;
+                padding: 36px;
+                min-width: 0;
+                min-height: 0;
+            }
+
+            .game-board {
+                width: min(100%, 690px, calc(100dvh - 120px));
+                box-shadow: 0 20px 56px rgba(0, 0, 0, 0.26);
+            }
+
+            .screen-game .footer {
+                grid-area: footer;
+                margin-top: 0;
+                border-top: 1px solid #e8dfd7;
+                border-right: 1px solid #e8dfd7;
+                padding: 20px 30px 24px;
+            }
+
+            body.dark-mode .screen-game .footer {
+                border-top-color: #454545;
+                border-right-color: #454545;
+            }
+        }
+    </style>
+
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Create Room Screen -->
+        <div id="screen-create" class="screen screen-setup active">
+            <div class="navbar">
+                <div class="navbar-title">Othello</div>
+                <button class="navbar-toggle" id="create-theme-toggle" title="Toggle dark mode">
+                    <i class="fas fa-moon"></i>
+                </button>
+            </div>
+            <div class="screen-setup-content">
+                <div class="setup-card-wrap">
+                    <div class="setup-card">
+                        <div class="setup-title">Create Room</div>
+                        <div class="setup-description">Start a private match and share the room link with your opponent.</div>
+                        <div class="input-group">
+                            <label for="player1-name">Your Name</label>
+                            <div class="input-shell">
+                                <i class="fas fa-user"></i>
+                                <input 
+                                    type="text"
+                                    id="player1-name" 
+                                    placeholder="Enter your name" 
+                                    maxlength="20"
+                                    autocomplete="name"
+                                >
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" id="create-room-btn">
+                            <i class="fas fa-plus"></i>
+                            <span>Create Room</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="footer show" id="create-footer" style="background-color: transparent;">
+                <div class="footer-text">Made by Manav for Ananya :)</div>
+                <div class="footer-links">
+                    <a href="https://github.com/ManavMehta-Official" target="_blank" rel="noopener noreferrer" class="footer-link" title="GitHub">
+                        <i class="fab fa-github"></i>
+                    </a>
+                    <a href="https://www.linkedin.com/in/manav-mehta-79b264296/" target="_blank" rel="noopener noreferrer" class="footer-link" title="LinkedIn">
+                        <i class="fab fa-linkedin-in"></i>
+                    </a>
+                    <a href="https://dribbble.com/manav_mehta" target="_blank" rel="noopener noreferrer" class="footer-link" title="Dribbble">
+                        <i class="fab fa-dribbble"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Join Room Screen -->
+        <div id="screen-join" class="screen screen-setup">
+            <div class="navbar">
+                <div class="navbar-title">Othello</div>
+                <button class="navbar-toggle" id="join-theme-toggle" title="Toggle dark mode">
+                    <i class="fas fa-moon"></i>
+                </button>
+            </div>
+            <div class="screen-setup-content">
+                <div class="setup-card-wrap">
+                    <div class="setup-card">
+                        <div class="setup-title">Join Room</div>
+                        <div class="setup-description">Enter your display name to join the match from this invite link.</div>
+                        <div class="input-group">
+                            <label for="player2-name">Your Name</label>
+                            <div class="input-shell">
+                                <i class="fas fa-user"></i>
+                                <input 
+                                    type="text" 
+                                    id="player2-name" 
+                                    placeholder="Enter your name" 
+                                    maxlength="20"
+                                    autocomplete="name"
+                                >
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" id="join-room-btn">
+                            <i class="fas fa-right-to-bracket"></i>
+                            <span>Join Game</span>
+                        </button>
+                        <div id="connection-error" class="connection-error" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="footer show" id="join-footer">
+                <div class="footer-text">Made by Manav for Ananya :)</div>
+                <div class="footer-links">
+                    <a href="https://github.com/ManavMehta-Official" target="_blank" rel="noopener noreferrer" class="footer-link" title="GitHub">
+                        <i class="fab fa-github"></i>
+                    </a>
+                    <a href="https://www.linkedin.com/in/manav-mehta-79b264296/" target="_blank" rel="noopener noreferrer" class="footer-link" title="LinkedIn">
+                        <i class="fab fa-linkedin-in"></i>
+                    </a>
+                    <a href="https://dribbble.com/manav_mehta" target="_blank" rel="noopener noreferrer" class="footer-link" title="Dribbble">
+                        <i class="fab fa-dribbble"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Waiting Room Screen -->
+        <div id="screen-waiting" class="screen screen-setup">
+            <div class="navbar">
+                <div class="navbar-title">Othello</div>
+                <button class="navbar-toggle" id="waiting-theme-toggle" title="Toggle dark mode">
+                    <i class="fas fa-moon"></i>
+                </button>
+            </div>
+            <div class="screen-setup-content">
+                <div class="setup-card-wrap">
+                    <div class="setup-card">
+                        <div class="setup-title">Room Created</div>
+                        <div class="setup-description">Share this link with your opponent to start the game.</div>
+                        <div class="link-display" id="room-link"></div>
+                        <button class="btn btn-primary" id="copy-link-btn">
+                            <i class="fas fa-copy"></i>
+                            <span>Copy Link</span>
+                        </button>
+                        <div class="waiting-indicator">
+                            <div class="spinner"></div>
+                            <div class="waiting-text">Waiting for opponent...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="footer show" id="waiting-footer">
+                <div class="footer-text">Made by Manav for Ananya :)</div>
+                <div class="footer-links">
+                    <a href="https://github.com/ManavMehta-Official" target="_blank" rel="noopener noreferrer" class="footer-link" title="GitHub">
+                        <i class="fab fa-github"></i>
+                    </a>
+                    <a href="https://www.linkedin.com/in/manav-mehta-79b264296/" target="_blank" rel="noopener noreferrer" class="footer-link" title="LinkedIn">
+                        <i class="fab fa-linkedin-in"></i>
+                    </a>
+                    <a href="https://dribbble.com/manav_mehta" target="_blank" rel="noopener noreferrer" class="footer-link" title="Dribbble">
+                        <i class="fab fa-dribbble"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="screen-game" class="screen screen-game">
+            <div class="game-header">
+                <div class="player-info-row">
+                    <div class="player-info" id="player-black-info">
+                        <div class="player-name" id="player-black-name">
+                            <span class="player-color-badge black"></span>
+                            <span>Player 1</span>
+                        </div>
+                        <div class="player-score" id="player-black-score">Score: 2</div>
+                    </div>
+                    <div class="player-info" id="player-white-info">
+                        <div class="player-name" id="player-white-name">
+                            <span class="player-color-badge white"></span>
+                            <span>Player 2</span>
+                        </div>
+                        <div class="player-score" id="player-white-score">Score: 2</div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                    <div class="turn-indicator" id="turn-indicator" style="flex: 1; margin: 0;">Black's Turn</div>
+                    <button class="theme-toggle" id="game-theme-toggle" title="Toggle dark mode">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="game-board-container">
+                <div class="game-board" id="game-board"></div>
+            </div>
+            <div class="footer show" id="game-footer">
+                <div class="footer-text">Made by Manav for Ananya :)</div>
+                <div class="footer-links">
+                    <a href="https://github.com/ManavMehta-Official" target="_blank" rel="noopener noreferrer" class="footer-link" title="GitHub">
+                        <i class="fab fa-github"></i>
+                    </a>
+                    <a href="https://www.linkedin.com/in/manav-mehta-79b264296/" target="_blank" rel="noopener noreferrer" class="footer-link" title="LinkedIn">
+                        <i class="fab fa-linkedin-in"></i>
+                    </a>
+                    <a href="https://dribbble.com/manav_mehta" target="_blank" rel="noopener noreferrer" class="footer-link" title="Dribbble">
+                        <i class="fab fa-dribbble"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Over Overlay -->
+        <div class="game-over-overlay" id="game-over-overlay">
+            <div class="game-over-content">
+                <div class="game-over-title">Game Over!</div>
+                <div class="game-over-winner" id="game-over-winner"></div>
+                <div class="final-scores">
+                    <div class="score-card">
+                        <div class="score-label" id="final-black-label">Black</div>
+                        <div class="score-value" id="final-black-score">0</div>
+                    </div>
+                    <div class="score-card">
+                        <div class="score-label" id="final-white-label">White</div>
+                        <div class="score-value" id="final-white-score">0</div>
+                    </div>
+                </div>
+                <button class="btn btn-primary" id="play-again-btn">Play Again</button>
+            </div>
+        </div>
+
+        <!-- Toast Notification -->
+        <div class="toast" id="toast"></div>
+    </div>
+
+    <script>
+        // ===== Game State =====
+        const gameState = {
+            // Connection
+            peerId: null,
+            peer: null,
+            connection: null,
+            isInitiator: false, // true = Player 1 (Black), false = Player 2 (White)
+
+            // Players
+            localPlayerName: '',
+            remotePlayerName: '',
+
+            // Board & Game Logic
+            board: Array(64).fill(0), // 0 = empty, 1 = black, 2 = white
+            currentPlayer: 1, // 1 = black, 2 = white
+            gameActive: true,
+            consecutiveSkips: 0,
+
+            // UI State
+            validMoves: [],
+            animatingCells: new Set()
+        };
+
+        // ===== Constants =====
+        const BOARD_SIZE = 8;
+        const EMPTY = 0;
+        const BLACK = 1;
+        const WHITE = 2;
+        const COLORS = {
+            1: 'black',
+            2: 'white'
+        };
+
+        // ===== Utility: Get Query Parameters =====
+        function getQueryParam(param) {
+            const params = new URLSearchParams(window.location.search);
+            return params.get(param);
+        }
+
+        // ===== Utility: Board Index Conversion =====
+        function getRowCol(index) {
+            return { row: Math.floor(index / 8), col: index % 8 };
+        }
+
+        function getIndex(row, col) {
+            if (row < 0 || row >= 8 || col < 0 || col >= 8) return -1;
+            return row * 8 + col;
+        }
+
+        // ===== Screen Management =====
+        function showScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+        }
+
+        function showToast(message, duration = 3000) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), duration);
+        }
+
+        // ===== Othello Game Logic =====
+        function initializeBoard() {
+            gameState.board = Array(64).fill(EMPTY);
+            // Starting position: center 4 squares
+            gameState.board[27] = WHITE;  // d4
+            gameState.board[28] = BLACK;  // e4
+            gameState.board[35] = BLACK;  // d5
+            gameState.board[36] = WHITE;  // e5
+        }
+
+        function getDirections() {
+            return [
+                { dr: -1, dc: 0 }, // up
+                { dr: -1, dc: 1 }, // up-right
+                { dr: 0, dc: 1 },  // right
+                { dr: 1, dc: 1 },  // down-right
+                { dr: 1, dc: 0 },  // down
+                { dr: 1, dc: -1 }, // down-left
+                { dr: 0, dc: -1 }, // left
+                { dr: -1, dc: -1 }  // up-left
+            ];
+        }
+
+        function isValidMove(index, player) {
+            if (gameState.board[index] !== EMPTY) return false;
+
+            const { row, col } = getRowCol(index);
+            const opponent = player === BLACK ? WHITE : BLACK;
+            const directions = getDirections();
+
+            for (const dir of directions) {
+                let r = row + dir.dr;
+                let c = col + dir.dc;
+                let hasOpponent = false;
+
+                while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+                    const idx = getIndex(r, c);
+                    if (gameState.board[idx] === opponent) {
+                        hasOpponent = true;
+                    } else if (gameState.board[idx] === player && hasOpponent) {
+                        return true;
+                    } else {
+                        break;
+                    }
+                    r += dir.dr;
+                    c += dir.dc;
+                }
+            }
+
+            return false;
+        }
+
+        function getValidMoves(player) {
+            const valid = [];
+            for (let i = 0; i < 64; i++) {
+                if (isValidMove(i, player)) {
+                    valid.push(i);
+                }
+            }
+            return valid;
+        }
+
+        function getFlippedDiscs(index, player) {
+            const flipped = [];
+            const { row, col } = getRowCol(index);
+            const opponent = player === BLACK ? WHITE : BLACK;
+            const directions = getDirections();
+
+            for (const dir of directions) {
+                const toFlip = [];
+                let r = row + dir.dr;
+                let c = col + dir.dc;
+                let hasOpponent = false;
+
+                while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+                    const idx = getIndex(r, c);
+                    if (gameState.board[idx] === opponent) {
+                        toFlip.push(idx);
+                        hasOpponent = true;
+                    } else if (gameState.board[idx] === player && hasOpponent) {
+                        flipped.push(...toFlip);
+                        break;
+                    } else {
+                        break;
+                    }
+                    r += dir.dr;
+                    c += dir.dc;
+                }
+            }
+
+            return flipped;
+        }
+
+        function makeMove(index, player) {
+            if (!isValidMove(index, player)) return false;
+
+            const flipped = getFlippedDiscs(index, player);
+            if (flipped.length === 0) return false;
+
+            gameState.board[index] = player;
+
+            flipped.forEach(idx => {
+                gameState.board[idx] = player;
+            });
+
+            return { index, player, flipped };
+        }
+
+        function countDiscs() {
+            let blackCount = 0, whiteCount = 0;
+            for (let disc of gameState.board) {
+                if (disc === BLACK) blackCount++;
+                else if (disc === WHITE) whiteCount++;
+            }
+            return { black: blackCount, white: whiteCount };
+        }
+
+        function checkGameOver() {
+            const blackMoves = getValidMoves(BLACK);
+            const whiteMoves = getValidMoves(WHITE);
+
+            if (blackMoves.length === 0 && whiteMoves.length === 0) {
+                return true; // Game over
+            }
+            return false;
+        }
+
+        function endGame(lastMove = null) {
+            gameState.gameActive = false;
+            renderBoard(lastMove);
+            syncGameState(lastMove); // Notify opponent
+            showGameOverFromCurrentState(850);
+        }
+
+        function getPlayerNamesByColor() {
+            return {
+                blackName: gameState.isInitiator ? gameState.localPlayerName : gameState.remotePlayerName,
+                whiteName: gameState.isInitiator ? gameState.remotePlayerName : gameState.localPlayerName
+            };
+        }
+
+        function getWinnerText(counts, blackName, whiteName) {
+            if (counts.black > counts.white) {
+                return `${blackName} (Black) wins!`;
+            }
+            if (counts.white > counts.black) {
+                return `${whiteName} (White) wins!`;
+            }
+            return 'It\'s a tie!';
+        }
+
+        function showGameOverFromCurrentState(delay = 0) {
+            const counts = countDiscs();
+            const { blackName, whiteName } = getPlayerNamesByColor();
+            const show = () => showGameOver(getWinnerText(counts, blackName, whiteName), counts, blackName, whiteName);
+
+            if (delay > 0) {
+                setTimeout(show, delay);
+            } else {
+                show();
+            }
+        }
+
+        // ===== UI Updates =====
+        function renderBoard(animationMove = null) {
+            const boardEl = document.getElementById('game-board');
+            boardEl.innerHTML = '';
+
+            for (let i = 0; i < 64; i++) {
+                const cell = document.createElement('button');
+                cell.className = 'board-cell';
+                cell.id = `cell-${i}`;
+
+                // Add valid move indicator
+                if (gameState.currentPlayer === (gameState.isInitiator ? BLACK : WHITE) &&
+                    gameState.validMoves.includes(i) &&
+                    gameState.gameActive) {
+                    cell.classList.add('valid-move');
+                }
+
+                // Add disc if present
+                if (gameState.board[i] !== EMPTY) {
+                    const disc = document.createElement('div');
+                    disc.className = `disc ${COLORS[gameState.board[i]]}`;
+                    disc.id = `disc-${i}`;
+                    if (animationMove && animationMove.index === i) {
+                        disc.classList.add('placed');
+                    } else if (animationMove && animationMove.flipped && animationMove.flipped.includes(i)) {
+                        disc.classList.add('flipped');
+                    }
+                    cell.appendChild(disc);
+                }
+
+                // Click handler
+                cell.addEventListener('click', () => handleCellClick(i));
+                boardEl.appendChild(cell);
+            }
+
+            updateScores();
+            updateTurnIndicator();
+        }
+
+        function updateScores() {
+            const counts = countDiscs();
+            const blackName = gameState.isInitiator ? gameState.localPlayerName : gameState.remotePlayerName;
+            const whiteName = gameState.isInitiator ? gameState.remotePlayerName : gameState.localPlayerName;
+
+            document.getElementById('player-black-name').querySelector('span:last-child').textContent = blackName;
+            document.getElementById('player-black-score').textContent = `Score: ${counts.black}`;
+            document.getElementById('player-white-name').querySelector('span:last-child').textContent = whiteName;
+            document.getElementById('player-white-score').textContent = `Score: ${counts.white}`;
+        }
+
+        function updateTurnIndicator() {
+            const blackInfo = document.getElementById('player-black-info');
+            const whiteInfo = document.getElementById('player-white-info');
+            const turnInd = document.getElementById('turn-indicator');
+
+            blackInfo.classList.remove('active');
+            whiteInfo.classList.remove('active');
+
+            if (!gameState.gameActive) {
+                turnInd.textContent = 'Game Over';
+                return;
+            }
+
+            if (gameState.currentPlayer === BLACK) {
+                blackInfo.classList.add('active');
+                turnInd.textContent = 'Black\'s Turn';
+            } else {
+                whiteInfo.classList.add('active');
+                turnInd.textContent = 'White\'s Turn';
+            }
+
+            // Check if it's local player's turn
+            const isLocalBlack = gameState.isInitiator;
+            const isLocalsTurn = (isLocalBlack && gameState.currentPlayer === BLACK) ||
+                                (!isLocalBlack && gameState.currentPlayer === WHITE);
+
+            if (!isLocalsTurn) {
+                turnInd.textContent += ' (Opponent)';
+            }
+        }
+
+        function animatePlaceDisc(index) {
+            gameState.animatingCells.add(index);
+            setTimeout(() => {
+                const disc = document.getElementById(`disc-${index}`);
+                if (disc) {
+                    disc.classList.add('placed');
+                    setTimeout(() => {
+                        disc.classList.remove('placed');
+                        gameState.animatingCells.delete(index);
+                    }, 400);
+                }
+            }, 10);
+        }
+
+        function animateDiscFlip(index) {
+            gameState.animatingCells.add(index);
+            setTimeout(() => {
+                const disc = document.getElementById(`disc-${index}`);
+                if (disc) {
+                    disc.classList.add('flipped');
+                    setTimeout(() => {
+                        disc.classList.remove('flipped');
+                        gameState.animatingCells.delete(index);
+                    }, 600);
+                }
+            }, 10);
+        }
+
+        function showGameOver(winner, counts, blackName, whiteName) {
+            document.getElementById('game-over-winner').textContent = winner;
+            document.getElementById('final-black-label').textContent = `${blackName}\n(Black)`;
+            document.getElementById('final-black-score').textContent = counts.black;
+            document.getElementById('final-white-label').textContent = `${whiteName}\n(White)`;
+            document.getElementById('final-white-score').textContent = counts.white;
+            document.getElementById('game-over-overlay').classList.add('active');
+        }
+
+        // ===== Turn Management =====
+        function handleCellClick(index) {
+            if (!gameState.gameActive) return;
+
+            const isLocalBlack = gameState.isInitiator;
+            const isLocalsTurn = (isLocalBlack && gameState.currentPlayer === BLACK) ||
+                                (!isLocalBlack && gameState.currentPlayer === WHITE);
+
+            if (!isLocalsTurn) {
+                showToast('It\'s not your turn!');
+                return;
+            }
+
+            if (!gameState.validMoves.includes(index)) {
+                showToast('Invalid move');
+                return;
+            }
+
+            const move = makeMove(index, gameState.currentPlayer);
+            if (!move) {
+                showToast('Invalid move');
+                return;
+            }
+
+            advanceTurn(move);
+        }
+
+        function advanceTurn(lastMove = null) {
+            gameState.consecutiveSkips = 0;
+            gameState.currentPlayer = gameState.currentPlayer === BLACK ? WHITE : BLACK;
+            gameState.validMoves = getValidMoves(gameState.currentPlayer);
+
+            // Check for skip
+            if (gameState.validMoves.length === 0) {
+                gameState.consecutiveSkips++;
+                showToast(`${gameState.currentPlayer === BLACK ? 'Black' : 'White'} has no valid moves. Skipping turn.`);
+
+                if (gameState.consecutiveSkips >= 2) {
+                    endGame(lastMove);
+                    return;
+                }
+
+                gameState.currentPlayer = gameState.currentPlayer === BLACK ? WHITE : BLACK;
+                gameState.validMoves = getValidMoves(gameState.currentPlayer);
+
+                if (gameState.validMoves.length === 0) {
+                    endGame(lastMove);
+                    return;
+                }
+            } else {
+                gameState.consecutiveSkips = 0;
+            }
+
+            if (checkGameOver()) {
+                endGame(lastMove);
+                return;
+            }
+
+            renderBoard(lastMove);
+            syncGameState(lastMove);
+        }
+
+        // ===== PeerJS Setup =====
+        async function initializePeer() {
+            return new Promise((resolve) => {
+                gameState.peer = new Peer();
+                gameState.peer.on('open', (id) => {
+                    gameState.peerId = id;
+                    resolve(id);
+                });
+                gameState.peer.on('error', (err) => {
+                    console.error('PeerJS error:', err);
+                    showToast('Connection error. Please reload.');
+                });
+            });
+        }
+
+        function startAsPlayer1() {
+            gameState.isInitiator = true;
+
+            gameState.peer.on('connection', (conn) => {
+                gameState.connection = conn;
+                setupConnectionHandlers();
+
+                // Send initial handshake
+                setTimeout(() => {
+                    if (gameState.connection && gameState.connection.open) {
+                        gameState.connection.send({
+                            type: 'init',
+                            playerName: gameState.localPlayerName,
+                            peerId: gameState.peerId
+                        });
+                    }
+                }, 100);
+            });
+
+            // Show waiting room
+            const currentUrl = window.location.href.split('?')[0];
+            const gameLink = `${currentUrl}?join=${gameState.peerId}`;
+            document.getElementById('room-link').textContent = gameLink;
+            showScreen('screen-waiting');
+        }
+
+        async function startAsPlayer2(targetPeerId) {
+            gameState.isInitiator = false;
+
+            gameState.connection = gameState.peer.connect(targetPeerId, { reliable: true });
+            
+            gameState.connection.on('open', () => {
+                setupConnectionHandlers();
+
+                // Send handshake with slight delay to ensure connection is ready
+                setTimeout(() => {
+                    if (gameState.connection && gameState.connection.open) {
+                        gameState.connection.send({
+                            type: 'init',
+                            playerName: gameState.localPlayerName,
+                            peerId: gameState.peerId
+                        });
+                    }
+                }, 100);
+            });
+
+            gameState.connection.on('error', (err) => {
+                console.error('Connection error:', err);
+                document.getElementById('connection-error').style.display = 'block';
+                document.getElementById('connection-error').textContent = 'Failed to connect. Please check the link and try again.';
+            });
+        }
+
+        function setupConnectionHandlers() {
+            gameState.connection.on('data', (data) => {
+                handlePeerMessage(data);
+            });
+
+            gameState.connection.on('close', () => {
+                showToast('Opponent disconnected');
+                console.log('Connection closed');
+            });
+
+            gameState.connection.on('error', (err) => {
+                console.error('Connection error:', err);
+                showToast('Connection lost');
+            });
+        }
+
+        function handlePeerMessage(data) {
+            console.log('Received message:', data);
+
+            switch (data.type) {
+                case 'init':
+                    gameState.remotePlayerName = data.playerName;
+                    if (gameState.isInitiator) {
+                        // Player 1 received Player 2's info, start game
+                        initializeGameScreen();
+                    } else {
+                        // Player 2 received Player 1's info, start game
+                        initializeGameScreen();
+                    }
+                    break;
+
+                case 'move':
+                    if (Array.isArray(data.board)) {
+                        gameState.board = data.board.slice();
+                    } else {
+                        gameState.board[data.index] = data.player;
+                        if (data.flipped) {
+                            data.flipped.forEach(idx => {
+                                gameState.board[idx] = data.player;
+                            });
+                        }
+                    }
+                    renderBoard(data);
+                    // Don't call advanceTurn here - let gameState message handle turn update
+                    break;
+
+                case 'gameState':
+                    if (Array.isArray(data.board)) {
+                        gameState.board = data.board.slice();
+                    }
+                    gameState.currentPlayer = data.currentPlayer;
+                    gameState.validMoves = Array.isArray(data.validMoves)
+                        ? data.validMoves
+                        : getValidMoves(gameState.currentPlayer);
+                    gameState.consecutiveSkips = data.consecutiveSkips;
+                    gameState.gameActive = data.gameActive !== false;
+                    renderBoard(data.lastMove || null);
+                    if (!gameState.gameActive) {
+                        showGameOverFromCurrentState(data.lastMove ? 850 : 0);
+                    }
+                    break;
+
+                case 'rematch':
+                    initializeBoard();
+                    gameState.currentPlayer = BLACK;
+                    gameState.gameActive = true;
+                    gameState.consecutiveSkips = 0;
+                    gameState.validMoves = getValidMoves(BLACK);
+                    document.getElementById('game-over-overlay').classList.remove('active');
+                    renderBoard();
+                    break;
+
+                default:
+                    console.warn('Unknown message type:', data.type);
+            }
+        }
+
+        function syncMove(move) {
+            if (!gameState.connection || !gameState.connection.open) return;
+
+            gameState.connection.send({
+                type: 'move',
+                index: move.index,
+                player: move.player,
+                flipped: move.flipped,
+                board: gameState.board.slice()
+            });
+        }
+
+        function syncGameState(lastMove = null) {
+            if (!gameState.connection || !gameState.connection.open) return;
+
+            gameState.connection.send({
+                type: 'gameState',
+                board: gameState.board.slice(),
+                currentPlayer: gameState.currentPlayer,
+                validMoves: gameState.validMoves,
+                consecutiveSkips: gameState.consecutiveSkips,
+                gameActive: gameState.gameActive,
+                lastMove
+            });
+        }
+
+        function syncRematch() {
+            if (!gameState.connection || !gameState.connection.open) return;
+
+            gameState.connection.send({
+                type: 'rematch'
+            });
+        }
+
+        // ===== Game Initialization =====
+        function initializeGameScreen() {
+            showScreen('screen-game');
+            initializeBoard();
+            gameState.currentPlayer = BLACK;
+            gameState.gameActive = true;
+            gameState.consecutiveSkips = 0;
+            gameState.validMoves = getValidMoves(BLACK);
+            renderBoard();
+        }
+
+        // ===== Event Listeners =====
+        document.getElementById('create-room-btn').addEventListener('click', async () => {
+            const name = document.getElementById('player1-name').value.trim();
+            if (!name) {
+                showToast('Please enter your name');
+                return;
+            }
+
+            const btn = document.getElementById('create-room-btn');
+            btn.disabled = true;
+            btn.classList.add('loading');
+
+            gameState.localPlayerName = name;
+            startAsPlayer1();
+        });
+
+        document.getElementById('join-room-btn').addEventListener('click', async () => {
+            const name = document.getElementById('player2-name').value.trim();
+            if (!name) {
+                showToast('Please enter your name');
+                return;
+            }
+
+            const btn = document.getElementById('join-room-btn');
+            btn.disabled = true;
+            btn.classList.add('loading');
+
+            gameState.localPlayerName = name;
+            const targetPeerId = getQueryParam('join');
+            if (!targetPeerId) {
+                showToast('Invalid join link');
+                btn.disabled = false;
+                btn.classList.remove('loading');
+                return;
+            }
+
+            await startAsPlayer2(targetPeerId);
+        });
+
+        document.getElementById('player1-name').addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                document.getElementById('create-room-btn').click();
+            }
+        });
+
+        document.getElementById('player2-name').addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                document.getElementById('join-room-btn').click();
+            }
+        });
+
+        document.getElementById('copy-link-btn').addEventListener('click', () => {
+            const link = document.getElementById('room-link').textContent;
+            navigator.clipboard.writeText(link).then(() => {
+                showToast('Link copied!');
+            }).catch(() => {
+                showToast('Failed to copy link');
+            });
+        });
+
+        document.getElementById('play-again-btn').addEventListener('click', () => {
+            initializeBoard();
+            gameState.currentPlayer = BLACK;
+            gameState.gameActive = true;
+            gameState.consecutiveSkips = 0;
+            gameState.validMoves = getValidMoves(BLACK);
+            document.getElementById('game-over-overlay').classList.remove('active');
+            renderBoard();
+            syncRematch();
+        });
+
+        // ===== Theme Management =====
+        function initTheme() {
+            const savedTheme = localStorage.getItem('othello-theme') || 'dark-mode';
+            applyTheme(savedTheme);
+            updateThemeToggle();
+            updateNavbarTitles();
+        }
+
+        function updateThemeToggle() {
+            const currentTheme = document.body.className;
+            const toggleButtons = document.querySelectorAll('.theme-toggle, .navbar-toggle');
+
+            toggleButtons.forEach((btn) => {
+                if (currentTheme === 'dark-mode') {
+                    btn.innerHTML = '<i class="fa-solid fa-circle-half-stroke"></i>';
+                    btn.title = 'Toggle light mode';
+                    btn.setAttribute('aria-label', 'Toggle light mode');
+                    btn.style.color = '#ffffff';
+                } else {
+                    btn.innerHTML = '<i class="fas fa-moon"></i>';
+                    btn.title = 'Toggle dark mode';
+                    btn.setAttribute('aria-label', 'Toggle dark mode');
+                    btn.style.color = '#0B7C3A';
+                }
+            });
+        }
+
+        function applyTheme(theme) {
+            document.body.className = theme;
+            document.querySelector('.app-container').className = `app-container ${theme}`;
+            document.querySelectorAll('.setup-card').forEach(card => {
+                card.className = `setup-card ${theme}`;
+            });
+            document.querySelectorAll('.navbar').forEach(navbar => {
+                navbar.className = `navbar ${theme}`;
+            });
+            document.querySelectorAll('.game-header').forEach(header => {
+                header.className = `game-header ${theme}`;
+            });
+            document.querySelectorAll('.player-info').forEach(info => {
+                info.className = info.className.replace(/light-mode|dark-mode/, theme);
+            });
+            document.querySelectorAll('.turn-indicator').forEach(indicator => {
+                indicator.className = `turn-indicator ${theme}`;
+            });
+            document.querySelectorAll('.link-display').forEach(display => {
+                display.className = `link-display ${theme}`;
+            });
+            document.querySelectorAll('.waiting-indicator').forEach(indicator => {
+                indicator.className = `waiting-indicator ${theme}`;
+            });
+            document.querySelectorAll('.input-group input').forEach(input => {
+                input.className = input.className.replace(/light-mode|dark-mode/g, '') + ` ${theme}`;
+            });
+            document.querySelectorAll('.input-group label').forEach(label => {
+                label.className = label.className.replace(/light-mode|dark-mode/g, '') + ` ${theme}`;
+            });
+            localStorage.setItem('othello-theme', theme);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.theme-toggle, .navbar-toggle').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const currentTheme = document.body.className;
+                    const newTheme = currentTheme === 'dark-mode' ? 'light-mode' : 'dark-mode';
+                    applyTheme(newTheme);
+                    updateThemeToggle();
+                    updateNavbarTitles();
+                });
+            });
+        });
+
+        function updateNavbarTitles() {
+            const currentTheme = document.body.className;
+            document.querySelectorAll('.navbar-title').forEach(title => {
+                if (currentTheme === 'dark-mode') {
+                    title.style.color = '#ffffff';
+                } else {
+                    title.style.color = '#1a1a1a';
+                }
+            });
+        }
+
+        // ===== Initialization =====
+        async function init() {
+            initTheme();
+            const joinId = getQueryParam('join');
+
+            if (joinId) {
+                // Player 2: joining a game
+                await initializePeer();
+                showScreen('screen-join');
+            } else {
+                // Player 1: creating a game
+                await initializePeer();
+                showScreen('screen-create');
+            }
+        }
+
+        // Start app
+        init();
+    </script>
+</body>
+</html>
