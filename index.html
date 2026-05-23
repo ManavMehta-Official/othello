@@ -1410,7 +1410,8 @@
 
             // UI State
             validMoves: [],
-            animatingCells: new Set()
+            animatingCells: new Set(),
+            hasGameStarted: false
         };
 
         // ===== Constants =====
@@ -1817,16 +1818,10 @@
                 gameState.connection = conn;
                 setupConnectionHandlers();
 
-                // Send initial handshake
-                setTimeout(() => {
-                    if (gameState.connection && gameState.connection.open) {
-                        gameState.connection.send({
-                            type: 'init',
-                            playerName: gameState.localPlayerName,
-                            peerId: gameState.peerId
-                        });
-                    }
-                }, 100);
+                // Send initial handshake. Player 1 also repeats this after
+                // receiving Player 2's handshake so a missed early message
+                // cannot leave Player 2 stuck on the join screen.
+                setTimeout(sendHandshake, 100);
             });
 
             // Show waiting room
@@ -1845,21 +1840,24 @@
                 setupConnectionHandlers();
 
                 // Send handshake with slight delay to ensure connection is ready
-                setTimeout(() => {
-                    if (gameState.connection && gameState.connection.open) {
-                        gameState.connection.send({
-                            type: 'init',
-                            playerName: gameState.localPlayerName,
-                            peerId: gameState.peerId
-                        });
-                    }
-                }, 100);
+                setTimeout(sendHandshake, 100);
             });
 
             gameState.connection.on('error', (err) => {
                 console.error('Connection error:', err);
                 document.getElementById('connection-error').style.display = 'block';
                 document.getElementById('connection-error').textContent = 'Failed to connect. Please check the link and try again.';
+                resetJoinButton();
+            });
+        }
+
+        function sendHandshake() {
+            if (!gameState.connection || !gameState.connection.open) return;
+
+            gameState.connection.send({
+                type: 'init',
+                playerName: gameState.localPlayerName,
+                peerId: gameState.peerId
             });
         }
 
@@ -1888,6 +1886,8 @@
                     if (gameState.isInitiator) {
                         // Player 1 received Player 2's info, start game
                         initializeGameScreen();
+                        sendHandshake();
+                        syncGameState();
                     } else {
                         // Player 2 received Player 1's info, start game
                         initializeGameScreen();
@@ -1910,6 +1910,12 @@
                     break;
 
                 case 'gameState':
+                    if (data.playerName && !gameState.remotePlayerName) {
+                        gameState.remotePlayerName = data.playerName;
+                    }
+                    if (!gameState.hasGameStarted) {
+                        initializeGameScreen();
+                    }
                     if (Array.isArray(data.board)) {
                         gameState.board = data.board.slice();
                     }
@@ -1962,6 +1968,7 @@
                 validMoves: gameState.validMoves,
                 consecutiveSkips: gameState.consecutiveSkips,
                 gameActive: gameState.gameActive,
+                playerName: gameState.localPlayerName,
                 lastMove
             });
         }
@@ -1976,6 +1983,9 @@
 
         // ===== Game Initialization =====
         function initializeGameScreen() {
+            if (gameState.hasGameStarted) return;
+
+            gameState.hasGameStarted = true;
             showScreen('screen-game');
             initializeBoard();
             gameState.currentPlayer = BLACK;
@@ -1983,6 +1993,12 @@
             gameState.consecutiveSkips = 0;
             gameState.validMoves = getValidMoves(BLACK);
             renderBoard();
+        }
+
+        function resetJoinButton() {
+            const btn = document.getElementById('join-room-btn');
+            btn.disabled = false;
+            btn.classList.remove('loading');
         }
 
         // ===== Event Listeners =====
