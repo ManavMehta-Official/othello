@@ -1797,6 +1797,9 @@
         }
 
         // ===== PeerJS Setup =====
+        const JOIN_CONNECTION_RETRY_DELAY_MS = 400;
+        const JOIN_CONNECTION_MAX_RETRIES = 4;
+
         async function initializePeer() {
             return new Promise((resolve) => {
                 gameState.peer = new Peer();
@@ -1831,24 +1834,50 @@
             showScreen('screen-waiting');
         }
 
-        async function startAsPlayer2(targetPeerId) {
-            gameState.isInitiator = false;
+        function isTransientConnectionError(err) {
+            return err && ['peer-unavailable', 'disconnected', 'network', 'socket-error', 'server-error'].includes(err.type);
+        }
+
+        function connectAsPlayer2(targetPeerId, attempt = 0) {
+            if (gameState.connection) {
+                gameState.connection.off?.('open');
+                gameState.connection.off?.('error');
+                gameState.connection.off?.('close');
+                gameState.connection.off?.('data');
+                try {
+                    gameState.connection.close();
+                } catch (error) {
+                    console.warn('Unable to close previous connection attempt:', error);
+                }
+            }
 
             gameState.connection = gameState.peer.connect(targetPeerId, { reliable: true });
-            
+
             gameState.connection.on('open', () => {
                 setupConnectionHandlers();
 
-                // Send handshake with slight delay to ensure connection is ready
+                // Send handshake with slight delay to ensure connection is ready.
                 setTimeout(sendHandshake, 100);
             });
 
             gameState.connection.on('error', (err) => {
                 console.error('Connection error:', err);
+
+                if (attempt < JOIN_CONNECTION_MAX_RETRIES && isTransientConnectionError(err)) {
+                    setTimeout(() => connectAsPlayer2(targetPeerId, attempt + 1), JOIN_CONNECTION_RETRY_DELAY_MS);
+                    return;
+                }
+
                 document.getElementById('connection-error').style.display = 'block';
                 document.getElementById('connection-error').textContent = 'Failed to connect. Please check the link and try again.';
                 resetJoinButton();
             });
+        }
+
+        async function startAsPlayer2(targetPeerId) {
+            gameState.isInitiator = false;
+
+            connectAsPlayer2(targetPeerId);
         }
 
         function sendHandshake() {
