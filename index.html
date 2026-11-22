@@ -293,6 +293,8 @@
             margin-bottom: 16px;
         }
 
+        #retry-room-btn[hidden] { display: none; }
+
         .btn {
             min-height: 52px;
             padding: 14px 18px;
@@ -1301,8 +1303,9 @@
                         </button>
                         <div class="waiting-indicator">
                             <div class="spinner"></div>
-                            <div class="waiting-text">Waiting for opponent...</div>
+                            <div class="waiting-text" id="room-status" role="status">Waiting for opponent...</div>
                         </div>
+                        <button class="btn" id="leave-waiting-btn">Leave Room</button>
                     </div>
                 </div>
             </div>
@@ -1348,6 +1351,11 @@
                     </button>
                 </div>
             </div>
+            <div style="display:flex;justify-content:center;flex-wrap:wrap;align-items:center;gap:8px;padding:4px 12px;">
+                <span id="match-status" role="status"></span>
+                <button class="btn" id="retry-room-btn" hidden>Retry Connection</button>
+                <button class="btn" id="leave-game-btn">Leave Room</button>
+            </div>
             <div class="game-board-container">
                 <div class="game-board" id="game-board"></div>
             </div>
@@ -1383,6 +1391,7 @@
                     </div>
                 </div>
                 <button class="btn btn-primary" id="play-again-btn">Play Again</button>
+                <button class="btn" id="leave-finished-btn">Leave Room</button>
             </div>
         </div>
 
@@ -1410,6 +1419,10 @@
             round: 0,
             ply: 0,
             connectionTimer: null,
+            roomId: '',
+            guestToken: '',
+            history: [],
+            connected: false,
 
             // UI State
             validMoves: [],
@@ -1621,7 +1634,7 @@
                 // Add valid move indicator
                 if (gameState.currentPlayer === (gameState.isInitiator ? BLACK : WHITE) &&
                     gameState.validMoves.includes(i) &&
-                    gameState.gameActive) {
+                    gameState.gameActive && gameState.connected) {
                     cell.classList.add('valid-move');
                 }
 
@@ -1665,6 +1678,11 @@
 
             blackInfo.classList.remove('active');
             whiteInfo.classList.remove('active');
+
+            if (!gameState.connected) {
+                turnInd.textContent = 'Match paused';
+                return;
+            }
 
             if (!gameState.gameActive) {
                 turnInd.textContent = 'Game Over';
@@ -1728,7 +1746,8 @@
 
         // ===== Turn Management =====
         function handleCellClick(index) {
-            if (!gameState.gameActive || !gameState.connection?.open) return;
+            if (!gameState.gameActive || !gameState.connected || !gameState.connection?.open ||
+                gameState.history.length >= MAX_HISTORY) return;
 
             const isLocalBlack = gameState.isInitiator;
             const isLocalsTurn = (isLocalBlack && gameState.currentPlayer === BLACK) ||
@@ -1751,12 +1770,15 @@
             }
 
             gameState.ply++;
-            gameState.connection.send({ type: 'move', round: gameState.round, ply: gameState.ply, index });
+            gameState.history.push(index);
+            saveRoom();
+            const packet = { type: 'move', round: gameState.round, ply: gameState.ply, index };
             advanceTurn(move);
+            sendPacket(packet);
         }
 
         // Both browsers apply the same move and independently compute the next turn.
-        function advanceTurn(lastMove) {
+        function advanceTurn(lastMove, quiet = false) {
             const next = gameState.currentPlayer === BLACK ? WHITE : BLACK;
             const nextMoves = getValidMoves(next);
             if (nextMoves.length) {
@@ -1765,19 +1787,24 @@
             } else {
                 gameState.validMoves = getValidMoves(gameState.currentPlayer);
                 if (!gameState.validMoves.length) {
-                    endGame(lastMove);
+                    if (quiet) gameState.gameActive = false;
+                    else endGame(lastMove);
                     return;
                 }
-                showToast(`${next === BLACK ? 'Black' : 'White'} has no valid moves. Skipping turn.`);
+                if (!quiet) showToast(`${next === BLACK ? 'Black' : 'White'} has no valid moves. Skipping turn.`);
             }
-            renderBoard(lastMove);
+            if (!quiet) renderBoard(lastMove);
         }
 
         // ===== Multiplayer =====
-        const PEER_TIMEOUT_MS = 12000;
-        const JOIN_TIMEOUT_MS = 15000;
-        const PROTOCOL_VERSION = 2;
-        let gameOverTimer;
+        const PEER_TIMEOUT_MS = 6000;
+        const JOIN_TIMEOUT_MS = 8000;
+        const PROTOCOL_VERSION = 3;
+        const ROOM_STORAGE_KEY = 'othello-room-v3';
+        const RETRY_DELAYS_MS = [250, 500, 1000, 2000, 4000, 6000];
+        const MAX_HISTORY = 12000;
+        let gameOverTimer, retryTimer;
+        let retryCount = 0, generation = 0, connecting = false;
 
         function setSetupStatus(isHost, message = '', busy = false) {
             const button = document.getElementById(isHost ? 'create-room-btn' : 'join-room-btn');
@@ -1788,12 +1815,53 @@
             error.style.display = message ? 'block' : 'none';
         }
 
-        function resetMatch() {
-            clearTimeout(gameOverTimer);
-            gameState.hasGameStarted = false;
-            gameState.gameActive = false;
-            gameState.remotePlayerName = '';
-            document.getElementById('game-over-overlay').classList.remove('active');
+        function setRoomStatus(message, retry = false) {
+            document.getElementById('room-status').textContent = message;
+            document.getElementById('match-status').textContent = message;
+            document.getElementById('retry-room-btn').hidden = !retry;
+            document.getElementById('play-again-btn').disabled = !gameState.connected;
+        }
+
+        function newToken() {
+            return Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        function saveRoom() {
+            if (!gameState.roomId) return;
+            try {
+                sessionStorage.setItem(ROOM_STORAGE_KEY, JSON.stringify({
+                    host: gameState.isInitiator, roomId: gameState.roomId,
+                    name: gameState.localPlayerName, remote: gameState.remotePlayerName,
+                    token: gameState.guestToken, started: gameState.hasGameStarted,
+                    history: gameState.history
+                }));
+            } catch {
+                // Play can continue in this tab, but refresh persistence may be unavailable.
+            }
+        }
+
+        function readRoom() {
+            try {
+                const r = JSON.parse(sessionStorage.getItem(ROOM_STORAGE_KEY));
+                const invite = getQueryParam('join');
+                if (!r || typeof r.host !== 'boolean' || typeof r.started !== 'boolean' ||
+                    typeof r.roomId !== 'string' || !r.roomId || (r.host ? invite !== null : r.roomId !== invite) ||
+                    typeof r.name !== 'string' || !r.name.trim() || typeof r.remote !== 'string' ||
+                    typeof r.token !== 'string' || ((r.started || !r.host) && !/^[a-f0-9]{32}$/.test(r.token)) ||
+                    (!r.started && (!Array.isArray(r.history) || r.history.length))) return null;
+                if (!replayHistory(r.history)) return null;
+                return r;
+            } catch {
+                return null;
+            }
+        }
+
+        function detachConnection() {
+            const conn = gameState.connection;
+            gameState.connection = null;
+            gameState.connected = false;
+            clearTimeout(gameState.connectionTimer);
+            if (conn) conn.close();
         }
 
         function releasePeer() {
@@ -1803,25 +1871,29 @@
             if (peer && !peer.destroyed) peer.destroy();
         }
 
-        function endConnection(message) {
-            const conn = gameState.connection;
-            clearTimeout(gameState.connectionTimer);
-            gameState.connection = null;
-            const hadGame = gameState.hasGameStarted;
-            resetMatch();
-            if (conn) conn.close();
-
-            if (gameState.isInitiator && gameState.peer &&
-                !gameState.peer.destroyed && !gameState.peer.disconnected) {
-                // Keep an existing invite usable if a guest leaves or never finishes joining.
-                showScreen('screen-waiting');
-                if (hadGame) showToast(message);
-                return;
-            }
-
+        function leaveRoom(toNewGame = true) {
+            generation++;
+            connecting = false;
+            clearTimeout(retryTimer);
+            clearTimeout(gameOverTimer);
+            retryCount = 0;
+            detachConnection();
             releasePeer();
-            showScreen(gameState.isInitiator ? 'screen-create' : 'screen-join');
-            setSetupStatus(gameState.isInitiator, message);
+            try { sessionStorage.removeItem(ROOM_STORAGE_KEY); } catch {}
+            gameState.roomId = '';
+            gameState.guestToken = '';
+            gameState.history = [];
+            gameState.hasGameStarted = false;
+            gameState.remotePlayerName = '';
+            document.getElementById('game-over-overlay').classList.remove('active');
+            if (toNewGame) {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('join');
+                try { window.history.replaceState(null, '', url.href); } catch {}
+            }
+            const isHost = toNewGame || getQueryParam('join') === null;
+            showScreen(isHost ? 'screen-create' : 'screen-join');
+            setSetupStatus(isHost);
         }
 
         function peerErrorMessage(err) {
@@ -1831,43 +1903,84 @@
             return 'Could not connect to multiplayer. Check your connection and try again.';
         }
 
-        function initializePeer() {
+        function scheduleReconnect(message) {
+            clearTimeout(retryTimer);
+            if (!gameState.roomId || connecting) return;
+            const exhausted = retryCount >= RETRY_DELAYS_MS.length;
+            if (gameState.hasGameStarted) {
+                setRoomStatus(exhausted ? message + ' You can retry or leave.' : 'Opponent disconnected. Reconnecting…', exhausted);
+                renderBoard();
+            } else if (gameState.isInitiator) {
+                setRoomStatus(exhausted ? message + ' Leave the room to start again.' : 'Restoring room…');
+            } else {
+                setSetupStatus(false, exhausted ? message : 'Reconnecting to the room…', !exhausted);
+            }
+            if (exhausted) return;
+            const activeGeneration = generation;
+            const delay = RETRY_DELAYS_MS[retryCount++];
+            retryTimer = setTimeout(() => {
+                if (generation === activeGeneration) openRoom();
+            }, delay);
+        }
+
+        function endConnection(message, permanent = false, pauseUnpaired = false) {
+            detachConnection();
+            clearTimeout(gameOverTimer);
+            document.getElementById('game-over-overlay').classList.remove('active');
+            if (gameState.isInitiator && gameState.peer && !gameState.peer.disconnected && !gameState.peer.destroyed) {
+                if (gameState.hasGameStarted) {
+                    setRoomStatus('Opponent disconnected. Waiting for them to reconnect…');
+                    renderBoard();
+                } else {
+                    setRoomStatus('Waiting for opponent…');
+                }
+                return;
+            }
+            releasePeer();
+            if (permanent || (pauseUnpaired && !gameState.hasGameStarted && retryCount === 0)) {
+                if (gameState.hasGameStarted) {
+                    setRoomStatus(message, true);
+                    renderBoard();
+                } else {
+                    // Retain the guest token if the host accepted hello but start was lost.
+                    if (permanent) leaveRoom(false);
+                    setSetupStatus(false, message);
+                }
+                return;
+            }
+            scheduleReconnect(message);
+        }
+
+        function initializePeer(stableId) {
             if (typeof Peer !== 'function') {
                 return Promise.reject(new Error('Multiplayer could not load. Reload the page and try again.'));
             }
             return new Promise((resolve, reject) => {
-                const peer = new Peer();
+                const peer = stableId ? new Peer(stableId) : new Peer();
                 gameState.peer = peer;
                 let ready = false;
-
-                const fail = (message) => {
+                const timer = setTimeout(() => fail('The multiplayer service did not respond. Try again.'), PEER_TIMEOUT_MS);
+                const fail = message => {
                     clearTimeout(timer);
                     reject(new Error(message));
                     if (gameState.peer === peer) releasePeer();
                 };
-                const timer = setTimeout(() => fail('The multiplayer service did not respond. Try again.'), PEER_TIMEOUT_MS);
-
-                peer.on('open', (id) => {
+                peer.on('open', id => {
                     if (gameState.peer !== peer) return;
                     clearTimeout(timer);
                     ready = true;
                     gameState.peerId = id;
                     resolve(peer);
                 });
-                peer.on('error', (err) => {
+                peer.on('error', err => {
                     if (gameState.peer !== peer) return;
-                    if (!ready) {
-                        fail(peerErrorMessage(err));
-                    } else if (!gameState.hasGameStarted) {
-                        // PeerJS reports an unknown/unavailable peer here, not on the data connection.
-                        endConnection(peerErrorMessage(err));
-                    }
+                    if (!ready) fail(peerErrorMessage(err));
+                    else if (!gameState.connected && !gameState.isInitiator) endConnection(peerErrorMessage(err), false, true);
                 });
                 peer.on('disconnected', () => {
                     if (gameState.peer !== peer) return;
                     if (!ready) fail(peerErrorMessage());
-                    // An established WebRTC data channel may survive a signaling disconnect.
-                    else if (!gameState.hasGameStarted) endConnection(peerErrorMessage());
+                    else if (!gameState.connected) endConnection(peerErrorMessage());
                 });
                 peer.on('close', () => {
                     if (gameState.peer !== peer) return;
@@ -1877,83 +1990,179 @@
             });
         }
 
+        function showInvite() {
+            const link = new URL(window.location.href);
+            link.search = '';
+            link.hash = '';
+            link.searchParams.set('join', gameState.roomId);
+            document.getElementById('room-link').textContent = link.href;
+            showScreen('screen-waiting');
+        }
+
+        function rejectGuest(conn, reason, busy = false) {
+            const reject = () => {
+                try { conn.send({ type: 'reject', reason, busy }); } catch {}
+                setTimeout(() => conn.close(), 150);
+            };
+            if (conn.open) reject();
+            else conn.on('open', reject);
+        }
+
         function startAsPlayer1(peer) {
-            peer.on('connection', (conn) => {
-                if (gameState.peer !== peer) {
-                    conn.close();
-                    return;
-                }
+            peer.on('connection', conn => {
+                if (gameState.peer !== peer) return conn.close();
                 if (gameState.connection) {
-                    conn.on('open', () => {
-                        conn.send({ type: 'reject', reason: 'This room already has an opponent. Ask the host for another room.' });
-                        setTimeout(() => conn.close(), 300);
-                    });
+                    rejectGuest(conn, 'This room already has an opponent.', true);
                     return;
                 }
                 setupConnection(conn);
             });
-            const gameLink = new URL(window.location.href);
-            gameLink.search = '';
-            gameLink.hash = '';
-            gameLink.searchParams.set('join', gameState.peerId);
-            document.getElementById('room-link').textContent = gameLink.href;
-            showScreen('screen-waiting');
+            if (!gameState.hasGameStarted) showInvite();
+            setRoomStatus(gameState.hasGameStarted ? 'Waiting for your opponent to reconnect…' : 'Waiting for opponent…');
         }
 
         function setupConnection(conn) {
             gameState.connection = conn;
             const active = () => gameState.connection === conn;
+            let sentHello = false;
             const sendHello = () => {
-                if (active() && !gameState.isInitiator) {
-                    conn.send({ type: 'hello', version: PROTOCOL_VERSION, name: gameState.localPlayerName });
-                }
+                if (!active() || gameState.isInitiator || sentHello) return;
+                sentHello = true;
+                sendPacket({ type: 'hello', version: PROTOCOL_VERSION, name: gameState.localPlayerName,
+                    token: gameState.guestToken, history: gameState.history.slice() });
             };
-            // Register data and close handlers before any greeting can arrive.
-            conn.on('data', (data) => {
-                if (active()) handlePeerMessage(data, conn);
-            });
-            conn.on('error', () => {
-                if (active()) endConnection('The game connection failed. Please try again.');
-            });
-            conn.on('close', () => {
-                if (active()) endConnection(gameState.hasGameStarted
-                    ? 'Opponent disconnected. You can start a new match.'
-                    : 'The room connection closed. Check the invite and try again.');
-            });
+            conn.on('data', data => { if (active()) handlePeerMessage(data, conn); });
+            conn.on('error', () => { if (active()) endConnection('The room connection failed.'); });
+            conn.on('close', () => { if (active()) endConnection('The room connection closed.'); });
             gameState.connectionTimer = setTimeout(() => {
-                if (active()) endConnection('The opponent did not connect in time. Try again, or ask for a fresh invite.');
+                if (active()) endConnection('The opponent did not connect in time.');
             }, JOIN_TIMEOUT_MS);
             conn.on('open', sendHello);
             if (conn.open) sendHello();
         }
 
+        function sendPacket(packet) {
+            try {
+                if (!gameState.connection?.open) throw new Error('Not connected');
+                gameState.connection.send(packet);
+                return true;
+            } catch {
+                endConnection('The room connection closed.');
+                return false;
+            }
+        }
+
+        function initializeRoundState(round) {
+            gameState.round = round;
+            gameState.ply = 0;
+            initializeBoard();
+            gameState.currentPlayer = BLACK;
+            gameState.gameActive = true;
+            gameState.validMoves = getValidMoves(BLACK);
+        }
+
+        // Replay from the initial board, not from state supplied by the other browser.
+        // A longer peer history can only add its own legal moves to our common prefix.
+        function replayHistory(history, peerFrom = Infinity, peerColor = null) {
+            if (!Array.isArray(history) || history.length > MAX_HISTORY) return null;
+            const keys = ['board', 'round', 'ply', 'currentPlayer', 'gameActive', 'validMoves'];
+            const original = Object.fromEntries(keys.map(key => [key, gameState[key]]));
+            try {
+                initializeRoundState(1);
+                for (let i = 0; i < history.length; i++) {
+                    const index = history[i];
+                    if (index === null) {
+                        if (gameState.gameActive) return null;
+                        initializeRoundState(gameState.round + 1);
+                        continue;
+                    }
+                    if (!gameState.gameActive || !Number.isInteger(index) || !gameState.validMoves.includes(index) ||
+                        (i >= peerFrom && gameState.currentPlayer !== peerColor)) return null;
+                    const move = makeMove(index, gameState.currentPlayer);
+                    if (!move) return null;
+                    gameState.ply++;
+                    advanceTurn(move, true);
+                }
+                return Object.fromEntries(keys.map(key => [key, gameState[key]]));
+            } finally {
+                Object.assign(gameState, original);
+            }
+        }
+
+        function reconcileHistory(peerHistory) {
+            const local = gameState.history;
+            if (!Array.isArray(peerHistory) || peerHistory.length > MAX_HISTORY) return false;
+            if (!peerHistory.slice(0, Math.min(local.length, peerHistory.length)).every((x, i) => x === local[i])) return false;
+            if (peerHistory.length > local.length) {
+                const replayed = replayHistory(peerHistory, local.length, gameState.isInitiator ? WHITE : BLACK);
+                if (!replayed) return false;
+                gameState.history = peerHistory.slice();
+                Object.assign(gameState, replayed);
+            }
+            return true;
+        }
+
+        function readyToPlay() {
+            clearTimeout(gameState.connectionTimer);
+            clearTimeout(retryTimer);
+            retryCount = 0;
+            gameState.connected = true;
+            gameState.hasGameStarted = true;
+            saveRoom();
+            showScreen('screen-game');
+            setSetupStatus(gameState.isInitiator);
+            setRoomStatus('');
+            document.getElementById('game-over-overlay').classList.remove('active');
+            renderBoard();
+            if (!gameState.gameActive) showGameOverFromCurrentState();
+        }
+
         function handlePeerMessage(data, conn) {
             if (!data || typeof data !== 'object') return;
-            if (!gameState.hasGameStarted) {
+            if (!gameState.connected) {
                 if (!gameState.isInitiator && data.type === 'reject') {
-                    endConnection(typeof data.reason === 'string' ? data.reason : 'This room is unavailable.');
+                    endConnection(typeof data.reason === 'string' ? data.reason : 'This room is unavailable.', !(data.busy === true && (gameState.hasGameStarted || retryCount > 0)));
                     return;
                 }
-                const expected = gameState.isInitiator ? 'hello' : 'start';
-                if (data.type !== expected) return;
+                if (data.type !== (gameState.isInitiator ? 'hello' : 'start')) return;
+                const name = typeof data.name === 'string' && data.name.trim().slice(0, 20);
+                let rejection = null;
                 if (data.version !== PROTOCOL_VERSION) {
-                    endConnection('The game versions differ. Both players should reload and create a fresh invite.');
+                    rejection = 'The game versions differ. Both players should reload and create a fresh invite.';
+                } else if (gameState.isInitiator && (typeof data.token !== 'string' ||
+                    !/^[a-f0-9]{32}$/.test(data.token) ||
+                    (gameState.guestToken && data.token !== gameState.guestToken))) {
+                    rejection = 'This match belongs to the original opponent. Ask the host for a fresh invite.';
+                } else if (!name || (!gameState.hasGameStarted && gameState.isInitiator && data.history?.length !== 0) ||
+                    !reconcileHistory(data.history)) {
+                    rejection = 'The saved match histories do not match. Leave the room to start a new game.';
+                }
+                if (rejection) {
+                    if (gameState.isInitiator) {
+                        clearTimeout(gameState.connectionTimer);
+                        gameState.connection = null;
+                        rejectGuest(conn, rejection);
+                    } else endConnection(rejection, true);
                     return;
                 }
-                if (typeof data.name !== 'string' || !data.name.trim()) return;
-
-                gameState.remotePlayerName = data.name.trim().slice(0, 20);
-                clearTimeout(gameState.connectionTimer);
+                if (!gameState.hasGameStarted && !gameState.history.length) initializeRoundState(1);
                 if (gameState.isInitiator) {
-                    conn.send({ type: 'start', version: PROTOCOL_VERSION, name: gameState.localPlayerName });
+                    gameState.guestToken = data.token;
+                    gameState.remotePlayerName = name;
+                    gameState.hasGameStarted = true;
+                    saveRoom();
+                    if (!sendPacket({ type: 'start', version: PROTOCOL_VERSION,
+                        name: gameState.localPlayerName, history: gameState.history.slice() })) return;
                 }
-                gameState.hasGameStarted = true;
-                showScreen('screen-game');
-                startRound(1);
+                gameState.remotePlayerName = name;
+                readyToPlay();
                 return;
             }
 
+            if (gameState.history.length >= MAX_HISTORY) return;
             if (data.type === 'rematch' && !gameState.gameActive && data.round === gameState.round + 1) {
+                gameState.history.push(null);
+                saveRoom();
                 startRound(data.round);
             } else if (data.type === 'move' && gameState.gameActive && data.round === gameState.round &&
                 data.ply === gameState.ply + 1) {
@@ -1962,6 +2171,8 @@
                 const move = makeMove(data.index, remoteColor);
                 if (move) {
                     gameState.ply++;
+                    gameState.history.push(data.index);
+                    saveRoom();
                     advanceTurn(move);
                 }
             }
@@ -1969,46 +2180,79 @@
 
         function startRound(round) {
             clearTimeout(gameOverTimer);
-            gameState.round = round;
-            gameState.ply = 0;
-            initializeBoard();
-            gameState.currentPlayer = BLACK;
-            gameState.gameActive = true;
-            gameState.validMoves = getValidMoves(BLACK);
+            initializeRoundState(round);
             document.getElementById('game-over-overlay').classList.remove('active');
             renderBoard();
         }
 
-        async function submitSetup(isHost) {
-            const name = document.getElementById(isHost ? 'player1-name' : 'player2-name').value.trim();
-            if (!name) {
-                setSetupStatus(isHost, 'Please enter your name.');
-                return;
-            }
-            const target = getQueryParam('join');
-            if (!isHost && !target) {
-                setSetupStatus(false, 'Invalid invite link. Ask for a fresh invite.');
-                return;
-            }
-
-            setSetupStatus(isHost, '', true);
-            gameState.isInitiator = isHost;
-            gameState.localPlayerName = name;
+        async function openRoom() {
+            if (connecting || gameState.connected) return;
+            connecting = true;
+            const currentGeneration = generation, isHost = gameState.isInitiator;
             try {
-                const peer = await initializePeer();
-                if (gameState.peer !== peer || peer.disconnected || peer.destroyed) return;
+                const peer = await initializePeer(isHost ? gameState.roomId : undefined);
+                if (generation !== currentGeneration || gameState.peer !== peer || peer.disconnected || peer.destroyed) return;
                 if (isHost) {
+                    if (!gameState.roomId) gameState.roomId = gameState.peerId;
+                    saveRoom();
+                    retryCount = 0;
                     startAsPlayer1(peer);
                     setSetupStatus(true);
                 } else {
-                    const conn = peer.connect(target, { reliable: true });
-                    if (!conn) throw new Error('The room could not be reached. Check the invite and try again.');
+                    const conn = peer.connect(gameState.roomId, { reliable: true });
+                    if (!conn) throw new Error('The room could not be reached.');
                     setupConnection(conn);
                 }
             } catch (err) {
+                if (generation !== currentGeneration) return;
+                connecting = false;
                 releasePeer();
-                setSetupStatus(isHost, err.message || peerErrorMessage());
+                if ((isHost && gameState.roomId) || gameState.hasGameStarted || retryCount) {
+                    scheduleReconnect(err.message || peerErrorMessage());
+                } else {
+                    if (!isHost) leaveRoom(false);
+                    setSetupStatus(isHost, err.message || peerErrorMessage());
+                }
+            } finally {
+                if (generation === currentGeneration) connecting = false;
             }
+        }
+
+        function submitSetup(isHost) {
+            if (connecting || gameState.connection) return;
+            const name = document.getElementById(isHost ? 'player1-name' : 'player2-name').value.trim();
+            if (!name) return setSetupStatus(isHost, 'Please enter your name.');
+            const target = getQueryParam('join');
+            if (!isHost && !target) return setSetupStatus(false, 'Invalid invite link. Ask for a fresh invite.');
+            clearTimeout(retryTimer);
+            retryCount = 0;
+            if (!isHost && gameState.roomId !== target) {
+                gameState.roomId = target;
+                gameState.guestToken = newToken();
+            }
+            gameState.isInitiator = isHost;
+            gameState.localPlayerName = name.slice(0, 20);
+            setSetupStatus(isHost, '', true);
+            saveRoom();
+            openRoom();
+        }
+
+        function resumeRoom() {
+            const r = readRoom();
+            if (!r) return;
+            Object.assign(gameState, {
+                isInitiator: r.host, roomId: r.roomId, localPlayerName: r.name,
+                remotePlayerName: r.remote, guestToken: r.token,
+                hasGameStarted: r.started, history: r.history
+            }, replayHistory(r.history));
+            document.getElementById(r.host ? 'player1-name' : 'player2-name').value = r.name;
+            if (r.started) {
+                showScreen('screen-game');
+                renderBoard();
+            } else if (r.host) {
+                showInvite();
+            }
+            scheduleReconnect('Could not restore the room.');
         }
 
         // ===== Event Listeners =====
@@ -2037,15 +2281,28 @@
         });
 
         document.getElementById('play-again-btn').addEventListener('click', () => {
-            if (!gameState.connection?.open || !gameState.hasGameStarted || gameState.gameActive) return;
+            if (!gameState.connected || !gameState.connection?.open || !gameState.hasGameStarted ||
+                gameState.gameActive || gameState.history.length >= MAX_HISTORY) return;
             const round = gameState.round + 1;
-            gameState.connection.send({ type: 'rematch', round });
+            gameState.history.push(null);
+            saveRoom();
             startRound(round);
+            sendPacket({ type: 'rematch', round });
+        });
+
+        document.getElementById('leave-join-btn').addEventListener('click', () => leaveRoom());
+        document.getElementById('leave-waiting-btn').addEventListener('click', () => leaveRoom());
+        document.getElementById('leave-finished-btn').addEventListener('click', () => leaveRoom());
+        document.getElementById('leave-game-btn').addEventListener('click', () => leaveRoom());
+        document.getElementById('retry-room-btn').addEventListener('click', () => {
+            retryCount = 0;
+            scheduleReconnect('Could not reconnect.');
         });
 
         // ===== Theme Management =====
         function initTheme() {
-            const savedTheme = localStorage.getItem('othello-theme') || 'dark-mode';
+            let savedTheme = 'dark-mode';
+            try { savedTheme = localStorage.getItem('othello-theme') || savedTheme; } catch {}
             applyTheme(savedTheme);
             updateThemeToggle();
             updateNavbarTitles();
@@ -2100,7 +2357,7 @@
             document.querySelectorAll('.input-group label').forEach(label => {
                 label.className = label.className.replace(/light-mode|dark-mode/g, '') + ` ${theme}`;
             });
-            localStorage.setItem('othello-theme', theme);
+            try { localStorage.setItem('othello-theme', theme); } catch {}
         }
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -2129,6 +2386,7 @@
         // ===== Initialization =====
         showScreen(getQueryParam('join') !== null ? 'screen-join' : 'screen-create');
         initTheme();
+        resumeRoom();
     </script>
 </body>
 </html>
