@@ -1211,6 +1211,7 @@
                             <i class="fas fa-plus"></i>
                             <span>Create Room</span>
                         </button>
+                        <button class="btn" id="manual-join-btn" type="button" style="width:100%; margin-top:8px;">Join a Room</button>
                         <div id="create-error" class="connection-error" role="status" style="display: none;"></div>
                     </div>
                 </div>
@@ -1243,7 +1244,7 @@
                 <div class="setup-card-wrap">
                     <div class="setup-card">
                         <div class="setup-title">Join Room</div>
-                        <div class="setup-description">Enter your display name to join the match from this invite link.</div>
+                        <div class="setup-description">Enter your display name to join the match. If the invite did not open, paste the link or room code.</div>
                         <div class="input-group">
                             <label for="player2-name">Your Name</label>
                             <div class="input-shell">
@@ -1257,11 +1258,19 @@
                                 >
                             </div>
                         </div>
+                        <div class="input-group" id="room-code-group" style="display:none;">
+                            <label for="room-code-input">Invite link or room code</label>
+                            <div class="input-shell">
+                                <input id="room-code-input" type="text" inputmode="text" maxlength="2048"
+                                    autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Paste the link or code">
+                            </div>
+                        </div>
                         <button class="btn btn-primary" id="join-room-btn">
                             <i class="fas fa-right-to-bracket"></i>
                             <span>Join Game</span>
                         </button>
                         <div id="connection-error" class="connection-error" role="status" style="display: none;"></div>
+                        <button class="btn" id="leave-join-btn" type="button" style="display:none;">Start a New Room Instead</button>
                     </div>
                 </div>
             </div>
@@ -1299,6 +1308,8 @@
                             <i class="fas fa-copy"></i>
                             <span>Copy Link</span>
                         </button>
+                        <div class="link-display" id="room-code" aria-label="Room code" style="margin-top:8px;user-select:all;"></div>
+                        <button class="btn" id="copy-code-btn" type="button">Copy Room Code</button>
                         <div class="waiting-indicator">
                             <div class="spinner"></div>
                             <div class="waiting-text" id="room-status" role="status">Waiting for opponent...</div>
@@ -1437,10 +1448,49 @@
             2: 'white'
         };
 
-        // ===== Utility: Get Query Parameters =====
-        function getQueryParam(param) {
-            const params = new URLSearchParams(window.location.search);
-            return params.get(param);
+        // Parse old and new invitations without consulting saved host state.
+        function validRoomCode(value) {
+            return typeof value === 'string' && value.length <= 128 && /^[A-Za-z0-9]+(?:[ _-][A-Za-z0-9]+)*$/.test(value);
+        }
+
+        function readInvite(url = new URL(window.location.href)) {
+            const query = url.searchParams.getAll('join');
+            const fragment = new URLSearchParams(url.hash.slice(1).replace(/^\?/, '')).getAll('join');
+            const values = [...query, ...fragment];
+            const codes = [...new Set(values.filter(validRoomCode))];
+            return {
+                present: values.length > 0,
+                code: codes.length === 1 && values.every(v => v === '' || v === codes[0]) ? codes[0] : null
+            };
+        }
+
+        function inviteURL(code) {
+            const url = new URL(window.location.href);
+            url.search = '';
+            url.hash = '';
+            url.searchParams.set('join', code);
+            url.hash = new URLSearchParams({ join: code }).toString();
+            return url;
+        }
+
+        function manualRoomCode(value) {
+            const text = value.trim();
+            if (validRoomCode(text)) return text;
+            try {
+                const url = new URL(text, window.location.href);
+                if (url.protocol === 'https:' || url.protocol === 'http:') return readInvite(url).code;
+            } catch {}
+            return null;
+        }
+
+        function showJoinEntry(manual = false) {
+            const invite = readInvite();
+            const showCode = manual || !invite.code;
+            document.getElementById('room-code-group').style.display = showCode ? 'block' : 'none';
+            showScreen('screen-join');
+            setSetupStatus(false, invite.present && !invite.code
+                ? 'This invite is incomplete. Paste the full invite or ask the host for the room code.'
+                : '');
         }
 
         // ===== Utility: Board Index Conversion =====
@@ -1810,7 +1860,12 @@
             button.classList.toggle('loading', busy);
             error.textContent = message;
             error.style.display = message ? 'block' : 'none';
-            if (!isHost) document.getElementById('leave-join-btn').style.display = message ? 'inline-flex' : 'none';
+            if (!isHost) {
+                const codeGroup = document.getElementById('room-code-group');
+                if (message && !busy && !gameState.hasGameStarted) codeGroup.style.display = 'block';
+                document.getElementById('leave-join-btn').style.display =
+                    (message || codeGroup.style.display === 'block') ? 'inline-flex' : 'none';
+            }
         }
 
         function setRoomStatus(message, retry = false) {
@@ -1846,9 +1901,9 @@
         function readRoom() {
             try {
                 const r = JSON.parse(sessionStorage.getItem(ROOM_STORAGE_KEY));
-                const invite = getQueryParam('join');
+                const invite = readInvite();
                 if (!r || typeof r.host !== 'boolean' || typeof r.started !== 'boolean' ||
-                    typeof r.roomId !== 'string' || !r.roomId || (r.host ? invite !== null : r.roomId !== invite) ||
+                    typeof r.roomId !== 'string' || !r.roomId || (r.host ? invite.present : r.roomId !== invite.code) ||
                     typeof r.name !== 'string' || !r.name.trim() || typeof r.remote !== 'string' ||
                     typeof r.token !== 'string' || ((r.started || !r.host) && !/^[a-f0-9]{32}$/.test(r.token)) ||
                     (!r.started && (!Array.isArray(r.history) || r.history.length))) return null;
@@ -1892,11 +1947,18 @@
             if (toNewGame) {
                 const url = new URL(window.location.href);
                 url.searchParams.delete('join');
+                const fragment = new URLSearchParams(url.hash.slice(1).replace(/^\?/, ''));
+                if (fragment.has('join')) {
+                    fragment.delete('join');
+                    url.hash = fragment.toString();
+                }
                 try { window.history.replaceState(null, '', url.href); } catch {}
             }
-            const isHost = toNewGame || getQueryParam('join') === null;
-            showScreen(isHost ? 'screen-create' : 'screen-join');
-            setSetupStatus(isHost);
+            const isHost = toNewGame || !readInvite().present;
+            if (isHost) {
+                showScreen('screen-create');
+                setSetupStatus(true);
+            } else showJoinEntry();
         }
 
         function peerErrorMessage(err) {
@@ -1994,11 +2056,8 @@
         }
 
         function showInvite() {
-            const link = new URL(window.location.href);
-            link.search = '';
-            link.hash = '';
-            link.searchParams.set('join', gameState.roomId);
-            document.getElementById('room-link').textContent = link.href;
+            document.getElementById('room-link').textContent = inviteURL(gameState.roomId).href;
+            document.getElementById('room-code').textContent = gameState.roomId;
             showScreen('screen-waiting');
         }
 
@@ -2225,8 +2284,20 @@
             if (connecting || gameState.connection) return;
             const name = document.getElementById(isHost ? 'player1-name' : 'player2-name').value.trim();
             if (!name) return setSetupStatus(isHost, 'Please enter your name.');
-            const target = getQueryParam('join');
-            if (!isHost && !target) return setSetupStatus(false, 'Invalid invite link. Ask for a fresh invite.');
+            const entry = document.getElementById('room-code-input').value || '';
+            const manual = document.getElementById('room-code-group').style.display === 'block';
+            const target = manual && entry.trim() ? manualRoomCode(entry) : readInvite().code;
+            if (!isHost && !target) {
+                showJoinEntry(true);
+                return setSetupStatus(false, 'Paste the full invite link or enter the host’s room code.');
+            }
+            if (!isHost && readInvite().code !== target) {
+                // Canonicalize a manually entered target so a later refresh resumes this exact room.
+                try { window.history.replaceState(null, '', inviteURL(target).href); }
+                catch { window.location.assign(inviteURL(target).href); return; }
+                document.getElementById('room-code-group').style.display = 'none';
+                document.getElementById('room-code-input').value = '';
+            }
             clearTimeout(retryTimer);
             retryCount = 0;
             if (!isHost && gameState.roomId !== target) {
@@ -2274,14 +2345,30 @@
             }
         });
 
-        document.getElementById('copy-link-btn').addEventListener('click', () => {
-            const link = document.getElementById('room-link').textContent;
-            navigator.clipboard.writeText(link).then(() => {
-                showToast('Link copied!');
-            }).catch(() => {
-                showToast('Failed to copy link');
-            });
+        document.getElementById('manual-join-btn').addEventListener('click', () => showJoinEntry(true));
+        document.getElementById('room-code-input').addEventListener('keydown', event => {
+            if (event.key === 'Enter') document.getElementById('join-room-btn').click();
         });
+
+        async function copyInviteText(id, success) {
+            const element = document.getElementById(id);
+            try {
+                await navigator.clipboard.writeText(element.textContent);
+                showToast(success);
+            } catch {
+                try {
+                    const selection = window.getSelection();
+                    const range = document.createRange();
+                    range.selectNodeContents(element);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                } catch {}
+                showToast('Copy is unavailable here. Select the link or room code and copy it manually.');
+            }
+        }
+
+        document.getElementById('copy-link-btn').addEventListener('click', () => copyInviteText('room-link', 'Link copied!'));
+        document.getElementById('copy-code-btn').addEventListener('click', () => copyInviteText('room-code', 'Room code copied!'));
 
         document.getElementById('play-again-btn').addEventListener('click', () => {
             if (!gameState.connected || !gameState.connection?.open || !gameState.hasGameStarted ||
@@ -2385,8 +2472,12 @@
         }
 
         // ===== Initialization =====
-        showScreen(getQueryParam('join') !== null ? 'screen-join' : 'screen-create');
-        initTheme();
+        if (readInvite().present) showJoinEntry();
+        else showScreen('screen-create');
+        try { initTheme(); } catch {
+            // Storage-restricted in-app browsers must still be able to enter a room.
+            document.body.className = 'dark-mode';
+        }
         resumeRoom();
     </script>
 </body>
